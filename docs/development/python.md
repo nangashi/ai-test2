@@ -446,7 +446,7 @@ echo "Deployment completed successfully!"
 1. **コード品質チェック**: ruff format/check、mypy、pytestを実行
 2. **依存関係の准備**: `uv export`でrequirements.txtを生成
 3. **デプロイ実行**: `./deploy.sh`を実行
-4. **動作確認**: `lambroll logs --follow`でログ確認
+4. **動作確認**: テスト実行とログ確認（詳細は下記「テスト実行とログ確認」参照）
 
 **スクリプトのポイント**:
 
@@ -484,11 +484,44 @@ lambroll deploy --dry-run               # デプロイ内容の確認
 lambroll rollback                       # 前のバージョンにロールバック
 lambroll delete                         # Lambda関数を削除
 
-# 監視
+# 基本的なログ確認
 lambroll logs                           # 最新のログを表示
 lambroll logs --follow                  # ログをリアルタイム監視
 lambroll logs --filter-pattern ERROR   # エラーログのみ表示
 ```
+
+### テスト実行とログ確認
+
+**デプロイ後の動作確認フロー**:
+
+```bash
+# 1. テスト実行（ログ付き）
+lambroll invoke --payload '{"test": true}' --log-type Tail
+# 実行結果とログが同時に表示される
+
+# 2. 直近のログ確認
+lambroll logs --since 5m                # 直近5分のログを表示
+lambroll logs --since 1m --follow       # 1分前からリアルタイム監視
+
+# 3. エラーログの確認
+lambroll logs --filter-pattern "ERROR" --since 10m  # 10分以内のエラーのみ
+lambroll logs --filter-pattern "[ERROR]" --since 30m # 別形式のエラーログ
+
+# 4. 特定の実行を追跡
+# invokeコマンドの出力にあるRequestIdを使用
+lambroll logs --filter-pattern "RequestId: abc123-..."  # 特定リクエストのログ
+
+# 5. 複数条件でのフィルタリング
+lambroll logs --filter-pattern "user_id=12345" --since 1h  # 特定ユーザーの処理
+lambroll logs --filter-pattern "?ERROR ?WARN" --since 30m  # エラーまたは警告
+```
+
+**ログ確認のベストプラクティス**:
+
+1. **デプロイ直後**: `lambroll invoke`でテストペイロードを送信し、即座に動作確認
+2. **継続的監視**: 別ターミナルで`lambroll logs --follow`を実行し、リアルタイム監視
+3. **問題調査**: `--since`と`--filter-pattern`を組み合わせて効率的に調査
+4. **本番確認**: CloudWatch Logsでより詳細な分析（メトリクス連携、Insights利用）
 
 ## 品質管理
 
