@@ -40,7 +40,16 @@ terraform apply
 - **Bot Token**: OAuth & Permissions → Bot User OAuth Token (`xoxb-...`)
 - **Signing Secret**: Basic Information → Signing Secret
 
-### 3. AWS Secrets Manager設定
+### 3. AWS Bedrock利用準備
+
+AWS Bedrockで利用可能なClaude 4モデルをリクエストする必要があります。
+
+#### 3.1 Model Access Request
+1. AWS Console → Bedrock → Foundation models → Model access
+2. `Claude 4 Sonnet (us.anthropic.claude-sonnet-4-20250514-v1:0)` をリクエスト
+3. 承認されるまで待機（通常数分～数時間）
+
+### 4. AWS Secrets Manager設定
 
 ```bash
 # Bot Token設定
@@ -56,29 +65,29 @@ aws secretsmanager put-secret-value \
   --region ap-northeast-1
 ```
 
-### 4. アプリケーションデプロイ
+### 5. アプリケーションデプロイ
 
 ```bash
 cd apps/slack-bot
 ./deploy.sh
 ```
 
-### 5. Slack Event Subscriptions設定
+### 6. Slack Event Subscriptions設定
 
-#### 5.1 Event Subscriptions有効化
+#### 6.1 Event Subscriptions有効化
 1. Event Subscriptions → ONに設定
 2. Request URL: `https://your-function-url.lambda-url.ap-northeast-1.on.aws/`
    - Terraform outputの`lambda_function_url`を使用
 3. URL検証が成功することを確認
 
-#### 5.2 Bot Events設定
+#### 6.2 Bot Events設定
 Subscribe to bot eventsで以下を追加:
 - `app_mention`
 
-#### 5.3 変更保存
+#### 6.3 変更保存
 Save Changesで設定を保存
 
-### 6. Slackアプリインストール
+### 7. Slackアプリインストール
 
 1. OAuth & Permissions → Install to Workspaceでインストール
 2. 権限を確認してAllow
@@ -110,10 +119,11 @@ apps/slack-bot/
 
 - **署名検証**: HMAC-SHA256によるSlack署名検証
 - **URL verification**: Slack App初回設定時の検証対応
-- **app_mention処理**: メンション受信時の応答
-  - 通常のメンション: 挨拶メッセージ
-  - スレッド内メンション: スレッド履歴表示（AI会話履歴のテスト用）
-- **スレッド履歴取得**: 会話の文脈を把握するための履歴読み込み
+- **Claude 4会話**: AWS BedrockでClaude 4 Sonnetと会話
+  - 通常のメンション: Claude 4との新規会話
+  - スレッド内メンション: 会話履歴を含めたClaude 4との継続会話
+- **スレッド履歴取得**: 会話の文脈をClaudeに渡すための履歴読み込み
+- **AI会話履歴管理**: Slackのスレッド履歴をClaude用のメッセージ形式に変換
 - **エラーハンドリング**: 適切なHTTPステータスコード返信
 
 ### ローカル開発
@@ -156,5 +166,6 @@ aws logs tail /aws/lambda/slack-bot-dev --follow --region ap-northeast-1
 ## セキュリティ
 
 - Bot TokenとSigning SecretはSecrets Managerで管理
-- Lambda実行ロールは最小権限の原則に従って設定
+- Lambda実行ロールは最小権限の原則に従って設定（Bedrock、Secrets Manager、CloudWatch Logsのみ）
 - Function URLsはSlack署名検証で保護
+- Bedrock利用によりAI処理がAWS内で完結

@@ -38,6 +38,8 @@ resource "aws_secretsmanager_secret_version" "slack_signing_secret" {
   }
 }
 
+# Bedrock用IAM権限は後述のポリシーで設定
+
 # Lambda実行用IAMロール
 resource "aws_iam_role" "lambda_execution_role" {
   name = "${var.function_name}-${var.environment}-lambda-role"
@@ -89,6 +91,28 @@ resource "aws_iam_role_policy" "secrets_manager_policy" {
   })
 }
 
+# Bedrock使用権限
+resource "aws_iam_role_policy" "bedrock_policy" {
+  name = "${var.function_name}-${var.environment}-bedrock-policy"
+  role = aws_iam_role.lambda_execution_role.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:*:*:foundation-model/anthropic.claude-*"
+        ]
+      }
+    ]
+  })
+}
+
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${var.function_name}-${var.environment}"
@@ -105,7 +129,7 @@ resource "aws_lambda_function" "slack_bot" {
   function_name = "${var.function_name}-${var.environment}"
   role          = aws_iam_role.lambda_execution_role.arn
   handler       = "src.lambda_function.lambda_handler"
-  runtime       = "python3.11"
+  runtime       = "python3.13"
   timeout       = var.lambda_timeout
   memory_size   = var.lambda_memory_size
   
@@ -130,6 +154,9 @@ resource "aws_lambda_function" "slack_bot" {
     Environment = var.environment
   })
 }
+
+# 現在のAWSリージョンを取得
+data "aws_region" "current" {}
 
 # ダミーZIPファイル作成用
 data "archive_file" "dummy_zip" {

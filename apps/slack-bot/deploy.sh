@@ -21,18 +21,29 @@ command -v lambroll >/dev/null || { echo "Error: lambroll not found"; exit 1; }
 
 echo "Building Lambda package..."
 
+# Setup virtual environment
+cd "$SCRIPT_DIR"
+uv venv --python 3.13 --quiet
+uv sync --quiet
+source .venv/bin/activate
+
+# Install pip in the virtual environment
+python -m ensurepip --upgrade
+
 # Build
 mkdir -p "$BUILD_DIR"
-cp -r "$SCRIPT_DIR/src" "$TEMP_DIR/"
+cp -r "$SCRIPT_DIR/src"/* "$TEMP_DIR/"
 
-# Install dependencies
-VENV_DIR="$TEMP_DIR/venv"
-uv venv "$VENV_DIR" --python 3.11 --quiet
-uv pip install --python "$VENV_DIR/bin/python" --requirement "$SCRIPT_DIR/requirements.txt" --quiet
-
-# Copy packages
-SITE_PACKAGES="$VENV_DIR/lib/python3.11/site-packages"
-cp -r "$SITE_PACKAGES"/* "$TEMP_DIR/"
+# Install dependencies using uv export with platform specification
+python -m pip install \
+    --no-cache-dir \
+    --no-deps \
+    -r <(uv export --format requirements-txt --no-dev --no-hashes | grep -vP "(botocore|tzdata)") \
+    --target "$TEMP_DIR/" \
+    --platform manylinux2014_x86_64 \
+    --implementation cp \
+    --python-version 3.13 \
+    --only-binary=:all:
 
 # Cleanup
 find "$TEMP_DIR" -type f -name "*.pyc" -delete
@@ -40,11 +51,10 @@ find "$TEMP_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || tr
 find "$TEMP_DIR" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 find "$TEMP_DIR" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
 find "$TEMP_DIR" -name "*.so" -exec strip {} + 2>/dev/null || true
-rm -rf "$VENV_DIR"
 
 # Create ZIP
 cd "$TEMP_DIR"
-zip -r "$BUILD_DIR/$PACKAGE_NAME" . -q
+zip -r "$BUILD_DIR/$PACKAGE_NAME" . -x "*__pycache__*" -q
 
 echo "Built: $BUILD_DIR/$PACKAGE_NAME"
 

@@ -6,6 +6,9 @@ import time
 import logging
 from slack_bolt import App
 
+# OpenTelemetryの基本設定（テレメトリーは無効化）
+os.environ["OTEL_SDK_DISABLED"] = "true"
+
 # ログレベル設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ def get_secret_value(secret_arn):
 # 環境変数からSecrets Manager ARNを取得
 SLACK_BOT_TOKEN_ARN = os.environ.get("SLACK_BOT_TOKEN_SECRET_ARN")
 SLACK_SIGNING_SECRET_ARN = os.environ.get("SLACK_SIGNING_SECRET_SECRET_ARN")
+AWS_REGION = os.environ.get("AWS_REGION", "ap-northeast-1")
 
 # Secrets Managerから値を取得（環境変数がある場合は直接使用）
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN") or (
@@ -73,6 +77,107 @@ def verify_slack_signature(signing_secret: str, request_body: str, timestamp: st
     
     # 署名を比較
     return hmac.compare_digest(computed_signature, signature)
+
+def chat_with_claude4(user_message: str, conversation_history: list = None) -> str:
+    """
+    AWS Bedrock Claude 4 Sonnetを使って会話する
+    
+    Args:
+        user_message: ユーザーのメッセージ
+        conversation_history: 会話履歴のリスト（形式: [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]）
+    
+    Returns:
+        str: Claudeの返答
+    """
+    try:
+        from strands import Agent
+        from strands.models import BedrockModel
+        
+        # Claude 4 Sonnet on Bedrockモデルを設定
+        model = BedrockModel(
+            model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+            region="us-east-1",  # Claude 4はus-east-1リージョンで利用可能
+            max_tokens=1000,
+            temperature=0.7,
+            additional_request_fields={
+                "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+                "thinking": {"type": "enabled", "budget_tokens": 4000},
+            }
+        )
+        
+        # エージェントを作成
+        agent = Agent(
+            model=model,
+            system_prompt="""あなたは親しみやすいSlack Botアシスタントです。
+            日本語で自然に会話し、ユーザーを支援してください。
+            簡潔で分かりやすい回答を心がけてください。"""
+        )
+        
+        # 会話履歴がある場合は履歴を含めてメッセージを構築
+        if conversation_history:
+            # 履歴を文字列として整理
+            history_text = "\n".join([
+                f"{'ユーザー' if msg.get('role') == 'user' else 'アシスタント'}: {msg.get('content', '')}"
+                for msg in conversation_history[-10:]  # 最新10件のみ使用
+            ])
+            
+            full_message = f"""以下は過去の会話履歴です：
+{history_text}
+
+新しいメッセージ: {user_message}
+
+上記の会話履歴を踏まえて、新しいメッセージに応答してください。"""
+        else:
+            full_message = user_message
+        
+        # Claude 4と会話
+        response = agent.chat(full_message)
+        
+        return response
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error chatting with Claude 4 via Bedrock: {e}")
+        logger.error(f"Full error traceback: {error_details}")
+        return f"申し訳ありません。AI処理中にエラーが発生しました: {str(e)}"
+
+def parse_thread_history_for_ai(messages: list) -> list:
+    """
+    Slackのメッセージ履歴をAI用の会話履歴形式に変換
+    
+    Args:
+        messages: Slackのメッセージリスト
+    
+    Returns:
+        list: AI用会話履歴 [{"role": "user"|"assistant", "content": "..."}]
+    """
+    conversation_history = []
+    
+    for msg in messages:
+        text = msg.get("text", "")
+        if not text:
+            continue
+            
+        # メンションを除去してクリーンなテキストにする
+        import re
+        clean_text = re.sub(r'<@[UW][A-Z0-9]+>', '', text).strip()
+        
+        if clean_text:
+            if msg.get("bot_id") or msg.get("app_id"):
+                # Botのメッセージ
+                conversation_history.append({
+                    "role": "assistant",
+                    "content": clean_text
+                })
+            else:
+                # ユーザーのメッセージ
+                conversation_history.append({
+                    "role": "user", 
+                    "content": clean_text
+                })
+    
+    return conversation_history
 
 def get_thread_history(client, channel: str, thread_ts: str) -> str:
     """
@@ -228,14 +333,37 @@ def lambda_handler(event, context):
                     channel = event_data.get("channel")
                     message_ts = event_data.get("ts")
                     thread_ts = event_data.get("thread_ts", message_ts)
+                    user_text = event_data.get("text", "")
+                    
+                    # メンションを除去してユーザーメッセージを取得
+                    import re
+                    clean_user_message = re.sub(r'<@[UW][A-Z0-9]+>', '', user_text).strip()
                     
                     # スレッド内でのメンションかチェック
                     if event_data.get("thread_ts"):
-                        # スレッド履歴を取得
-                        response_text = get_thread_history(client, channel, thread_ts)
+                        # スレッド履歴を取得してClaude 4と会話
+                        try:
+                            thread_response = client.conversations_replies(
+                                channel=channel,
+                                ts=thread_ts,
+                                limit=20
+                            )
+                            
+                            if thread_response["ok"]:
+                                messages = thread_response["messages"]
+                                conversation_history = parse_thread_history_for_ai(messages)
+                                
+                                # Claude 4と会話（履歴付き）
+                                response_text = chat_with_claude4(clean_user_message, conversation_history)
+                            else:
+                                # 履歴取得失敗時は履歴なしで会話
+                                response_text = chat_with_claude4(clean_user_message)
+                        except Exception as e:
+                            logger.error(f"Error getting thread history: {e}")
+                            response_text = chat_with_claude4(clean_user_message)
                     else:
-                        # 通常のメンション
-                        response_text = "こんにちは！メンションありがとうございます。"
+                        # 通常のメンション - Claude 4と会話（履歴なし）
+                        response_text = chat_with_claude4(clean_user_message)
                     
                     client.chat_postMessage(
                         channel=channel,

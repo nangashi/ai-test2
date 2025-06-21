@@ -36,7 +36,10 @@
       "Bash(chmod:*)",
       "Bash(./build.sh)",
       "Bash(uv python install:*)",
-      "Bash(./deploy.sh)"
+      "Bash(./deploy.sh)",
+      "Bash(python -m pytest)",
+      "Bash(uv pip install:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   },
