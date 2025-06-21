@@ -32,7 +32,11 @@
       "Bash(echo $?)",
       "Bash(zip:*)",
       "Bash(cat:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(chmod:*)",
+      "Bash(./build.sh)",
+      "Bash(uv python install:*)",
+      "Bash(./deploy.sh)"
     ],
     "deny": []
   },
