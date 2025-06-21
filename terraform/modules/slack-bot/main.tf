@@ -106,7 +106,8 @@ resource "aws_iam_role_policy" "bedrock_policy" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = [
-          "arn:aws:bedrock:*:*:foundation-model/anthropic.claude-*"
+          "arn:aws:bedrock:*:*:foundation-model/anthropic.claude-*",
+          "arn:aws:bedrock:*:*:inference-profile/*"
         ]
       }
     ]
@@ -128,7 +129,7 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 resource "aws_lambda_function" "slack_bot" {
   function_name = "${var.function_name}-${var.environment}"
   role          = aws_iam_role.lambda_execution_role.arn
-  handler       = "src.lambda_function.lambda_handler"
+  handler       = "lambda_function.lambda_handler"
   runtime       = "python3.13"
   timeout       = var.lambda_timeout
   memory_size   = var.lambda_memory_size

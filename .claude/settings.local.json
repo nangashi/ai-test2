@@ -39,7 +39,10 @@
       "Bash(./deploy.sh)",
       "Bash(python -m pytest)",
       "Bash(uv pip install:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(unzip:*)"
     ],
     "deny": []
   },

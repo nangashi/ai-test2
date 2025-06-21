@@ -15,11 +15,13 @@ trap cleanup EXIT
 # Check requirements
 command -v uv >/dev/null || { echo "Error: uv not found"; exit 1; }
 command -v lambroll >/dev/null || { echo "Error: lambroll not found"; exit 1; }
-[[ -f "$SCRIPT_DIR/requirements.txt" ]] || { echo "Error: requirements.txt not found"; exit 1; }
 [[ -d "$SCRIPT_DIR/src" ]] || { echo "Error: src directory not found"; exit 1; }
-[[ -f "$SCRIPT_DIR/function.json" ]] || { echo "Error: function.json not found"; exit 1; }
+[[ -f "$SCRIPT_DIR/lambroll/function.json" ]] || { echo "Error: lambroll/function.json not found"; exit 1; }
 
 echo "Building Lambda package..."
+
+# Remove existing build directory
+rm -rf "$BUILD_DIR"
 
 # Setup virtual environment
 cd "$SCRIPT_DIR"
@@ -32,6 +34,7 @@ python -m ensurepip --upgrade
 
 # Build
 mkdir -p "$BUILD_DIR"
+# srcディレクトリの中身をルートにコピー
 cp -r "$SCRIPT_DIR/src"/* "$TEMP_DIR/"
 
 # Install dependencies using uv export with platform specification
@@ -50,6 +53,9 @@ find "$TEMP_DIR" -type f -name "*.pyc" -delete
 find "$TEMP_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find "$TEMP_DIR" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 find "$TEMP_DIR" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+find "$TEMP_DIR" -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+find "$TEMP_DIR" -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+find "$TEMP_DIR" -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 find "$TEMP_DIR" -name "*.so" -exec strip {} + 2>/dev/null || true
 
 # Create ZIP
@@ -61,6 +67,6 @@ echo "Built: $BUILD_DIR/$PACKAGE_NAME"
 # Deploy with lambroll
 echo "Deploying with lambroll..."
 cd "$SCRIPT_DIR"
-lambroll deploy --src "$BUILD_DIR/$PACKAGE_NAME"
+lambroll deploy --function "$SCRIPT_DIR/lambroll/function.json" --src "$BUILD_DIR/$PACKAGE_NAME"
 
 echo "Deployment completed successfully!"
