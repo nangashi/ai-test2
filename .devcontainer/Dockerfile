@@ -2,9 +2,9 @@
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
 
 # 基本パッケージのアップデートとインストール
-# RUN apt-get update && apt-get install -y \
-#     curl \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    tmux \
+    && rm -rf /var/lib/apt/lists/*
 
 # 作業ディレクトリを設定
 WORKDIR /workspace
