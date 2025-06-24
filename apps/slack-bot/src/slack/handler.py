@@ -3,7 +3,7 @@ from typing import Any
 
 from slack_sdk import WebClient
 
-from ai.bedrock_client import chat_with_bedrock_direct
+from ai.strands_client import chat_with_strands
 from config.settings import settings
 from slack.message_parser import extract_clean_message, parse_thread_history_for_ai
 
@@ -51,16 +51,16 @@ def handle_app_mention(event: dict[str, Any]) -> None:
                     logger.info(f"Parsed {len(conversation_history)} messages for AI context")
 
                     # AIと会話（履歴付き）
-                    response_text = chat_with_bedrock_direct(clean_user_message, conversation_history)
+                    response_text = chat_with_strands(clean_user_message, conversation_history)
                 else:
                     # 履歴取得失敗時は履歴なしで会話
-                    response_text = chat_with_bedrock_direct(clean_user_message)
+                    response_text = chat_with_strands(clean_user_message)
             except Exception as e:
                 logger.error(f"Error getting thread history: {e}")
-                response_text = chat_with_bedrock_direct(clean_user_message)
+                response_text = chat_with_strands(clean_user_message)
         else:
             # 通常のメンション - AIと会話（履歴なし）
-            response_text = chat_with_bedrock_direct(clean_user_message)
+            response_text = chat_with_strands(clean_user_message)
 
         # Slackに返信
         client.chat_postMessage(channel=channel, thread_ts=thread_ts, text=response_text)

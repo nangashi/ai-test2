@@ -26,8 +26,8 @@ echo "Image: ${ECR_REPOSITORY}:${IMAGE_TAG}"
 aws ecr get-login-password --region ${AWS_REGION} | \
   docker login --username AWS --password-stdin ${ECR_REPOSITORY}
 
-# Docker build & push
-docker build -t app:build .
+# Docker build & push (Lambda互換性のため --provenance=false を使用)
+docker buildx build --platform linux/amd64 --provenance=false -t app:build .
 docker tag app:build "${ECR_REPOSITORY}:${IMAGE_TAG}"
 docker push "${ECR_REPOSITORY}:${IMAGE_TAG}"
 

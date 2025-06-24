@@ -47,7 +47,9 @@
       "Bash(bash:*)",
       "Bash(./deploy.sh:*)",
       "WebFetch(domain:docs.tavily.com)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "mcp__tavily__tavily-search",
+      "mcp__tavily__tavily-extract"
     ],
     "deny": []
   },
