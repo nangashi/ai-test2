@@ -1,7 +1,10 @@
 {
-  "FunctionName": "slack-bot-dev",
-  "Runtime": "python3.13",
-  "Handler": "lambda_function.lambda_handler",
+  "FunctionName": "{{ must_env `FUNCTION_NAME` }}",
+  "PackageType": "Image",
+  "Code": {
+    "ImageUri": "{{ must_env `IMAGE_URI` }}"
+  },
+  "Role": "arn:aws:iam::384081048358:role/slack-bot-dev-lambda-role",
   "Timeout": 120,
   "MemorySize": 256,
   "Environment": {

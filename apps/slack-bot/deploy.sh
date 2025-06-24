@@ -2,71 +2,40 @@
 
 set -euo pipefail
 
+ENVIRONMENT=${1:-dev}
+AWS_REGION="ap-northeast-1"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$SCRIPT_DIR/build"
-PACKAGE_NAME="slack-bot-lambda.zip"
-TEMP_DIR=$(mktemp -d)
 
-cleanup() {
-    rm -rf "$TEMP_DIR"
-}
-trap cleanup EXIT
-
-# Check requirements
-command -v uv >/dev/null || { echo "Error: uv not found"; exit 1; }
+# 必要ツールの確認
+command -v docker >/dev/null || { echo "Error: docker not found"; exit 1; }
+command -v aws >/dev/null || { echo "Error: aws cli not found"; exit 1; }
 command -v lambroll >/dev/null || { echo "Error: lambroll not found"; exit 1; }
-[[ -d "$SCRIPT_DIR/src" ]] || { echo "Error: src directory not found"; exit 1; }
+[[ -f "$SCRIPT_DIR/Dockerfile" ]] || { echo "Error: Dockerfile not found"; exit 1; }
 [[ -f "$SCRIPT_DIR/lambroll/function.json" ]] || { echo "Error: lambroll/function.json not found"; exit 1; }
 
-echo "Building Lambda package..."
+echo "Deploying Docker image..."
 
-# Remove existing build directory
-rm -rf "$BUILD_DIR"
+ECR_REPOSITORY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$(basename "$PWD")-${ENVIRONMENT}"
+GIT_SHA=$(git rev-parse --short HEAD)
+IMAGE_TAG="sha-${GIT_SHA}"
 
-# Setup virtual environment
-cd "$SCRIPT_DIR"
-uv venv --python 3.13 --quiet
-uv sync --quiet
-source .venv/bin/activate
+echo "Image: ${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-# Install pip in the virtual environment
-python -m ensurepip --upgrade
+# ECRログイン
+aws ecr get-login-password --region ${AWS_REGION} | \
+  docker login --username AWS --password-stdin ${ECR_REPOSITORY}
 
-# Build
-mkdir -p "$BUILD_DIR"
-# srcディレクトリの中身をルートにコピー
-cp -r "$SCRIPT_DIR/src"/* "$TEMP_DIR/"
+# Docker build & push
+docker build -t app:build .
+docker tag app:build "${ECR_REPOSITORY}:${IMAGE_TAG}"
+docker push "${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-# Install dependencies using uv export with platform specification
-python -m pip install \
-    --no-cache-dir \
-    --no-deps \
-    -r <(uv export --format requirements-txt --no-dev --no-hashes | grep -vP "(botocore|tzdata)") \
-    --target "$TEMP_DIR/" \
-    --platform manylinux2014_x86_64 \
-    --implementation cp \
-    --python-version 3.13 \
-    --only-binary=:all:
+# lambroll用環境変数設定
+export FUNCTION_NAME="$(basename "$PWD")-${ENVIRONMENT}"
+export IMAGE_URI="${ECR_REPOSITORY}:${IMAGE_TAG}"
 
-# Cleanup
-find "$TEMP_DIR" -type f -name "*.pyc" -delete
-find "$TEMP_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-find "$TEMP_DIR" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-find "$TEMP_DIR" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-find "$TEMP_DIR" -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
-find "$TEMP_DIR" -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
-find "$TEMP_DIR" -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-find "$TEMP_DIR" -name "*.so" -exec strip {} + 2>/dev/null || true
-
-# Create ZIP
-cd "$TEMP_DIR"
-zip -r "$BUILD_DIR/$PACKAGE_NAME" . -x "*__pycache__*" -q
-
-echo "Built: $BUILD_DIR/$PACKAGE_NAME"
-
-# Deploy with lambroll
-echo "Deploying with lambroll..."
-cd "$SCRIPT_DIR"
-lambroll deploy --function "$SCRIPT_DIR/lambroll/function.json" --src "$BUILD_DIR/$PACKAGE_NAME"
+# lambrollデプロイ（バージョン公開でロールバック対応）
+cd lambroll && lambroll deploy --publish
 
 echo "Deployment completed successfully!"

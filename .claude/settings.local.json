@@ -43,7 +43,11 @@
       "Bash(mv:*)",
       "Bash(rm:*)",
       "Bash(unzip:*)",
-      "mcp__aws-documentation__read_documentation"
+      "mcp__aws-documentation__read_documentation",
+      "Bash(bash:*)",
+      "Bash(./deploy.sh:*)",
+      "WebFetch(domain:docs.tavily.com)",
+      "Bash(curl:*)"
     ],
     "deny": []
   },
