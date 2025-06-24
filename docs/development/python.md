@@ -100,7 +100,15 @@ uv sync                    # pyproject.tomlに基づく依存関係インスト�
 mkdir -p src tests tests-it lambroll
 touch src/main.py tests/conftest.py tests-it/conftest.py
 
-# 6. .gitignore設定
+# 6. デプロイファイルの作成
+# ZIPデプロイ用（基本）
+touch deploy.sh
+chmod +x deploy.sh
+
+# Dockerイメージデプロイする場合のみ追加
+# touch Dockerfile
+
+# 7. .gitignore設定
 cat > .gitignore << 'EOF'
 __pycache__/
 *.py[cod]
@@ -294,29 +302,32 @@ EOF
 
 **具体的な作業内容**:
 
-1. **デプロイパッケージの作成**
-   - `deploy.sh`スクリプトを実行してLambda関数のZIPパッケージを作成
-   - 依存関係の最適化、不要ファイルの除去でパッケージサイズを最小化
-   - バージョンタグ付け、デプロイ履歴の記録
+1. **デプロイ方式の選択**
+   - 基本はZIPパッケージデプロイ
+   - Dockerイメージでデプロイする場合は専用の`deploy.sh`を作成
 
-2. **本番環境へのデプロイ**
+2. **デプロイパッケージの作成**
+   - ZIPデプロイ: Lambda関数のZIPパッケージを作成、依存関係最適化
+   - Dockerデプロイ: ECRにイメージをプッシュ、Git SHAベースのタグ付け
+
+3. **本番環境へのデプロイ**
    - lambrollを使用したLambda関数の本番環境へのデプロイ
    - 環境変数、IAMロール、トリガー設定の確認
-   - 段階的デプロイ（Blue/Green deploymentなど）の実施
+   - バージョン公開（`--publish`オプション）でロールバック可能状態を維持
 
-3. **デプロイ後の動作確認**
+4. **デプロイ後の動作確認**
    - エラーログがないことを確認
    - 実際のリクエストでの動作テスト（手動またはスモークテスト）
    - 期待通りのレスポンスが返されることを確認
 
-4. **監視・アラート設定**
+5. **監視・アラート設定**
    - CloudWatch Metricsでの実行時間、エラー率の監視設定
    - アラーム閾値の設定（エラー率、レスポンス時間など）
    - ログ分析、メトリクス可視化の設定
 
-5. **ロールバック準備**
-   - 問題発生時の迅速なロールバック手順の確認
-   - 前バージョンのデプロイパッケージ保持
+6. **ロールバック準備**
+   - lambrollの自動ロールバック機能を活用
+   - 問題発生時は`lambroll rollback`で前バージョンに即座復元
 
 **完了基準**: 本番環境デプロイ成功、動作確認完了、監視・アラート設定完了、ロールバック手順確認済み
 
@@ -444,6 +455,7 @@ apps/<application_name>/
 │   └── test_integration/   # シナリオテスト
 ├── lambroll/               # Lambda関数デプロイ設定（該当する場合）
 │   └── function.json       # Lambda関数設定
+├── Dockerfile              # Dockerイメージデプロイする場合のみ
 ├── pyproject.toml          # プロジェクト設定・依存関係
 ├── uv.lock                 # 依存関係バージョン固定
 ├── deploy.sh               # デプロイスクリプト（実行権限付与）
@@ -916,17 +928,26 @@ Lambda関数のデプロイ手順、運用時のログ確認・監視方法を�
 
 ### デプロイ管理
 
+#### デプロイ方式選択
+
+**基本方針**:
+- **ZIPパッケージ**: デフォルト方式、シンプルで高速
+- **Dockerイメージ**: 指示がある場合のみ、複雑な依存関係や大容量アプリに適用
+
+**切り替え方法**: ZIP用とDocker用でそれぞれ専用の`deploy.sh`を作成・使用
+
 #### Lambda関数のデプロイ
 
-**デプロイスクリプト**: `deploy.sh`を作成してデプロイプロセスを自動化
+##### ZIPパッケージデプロイ用スクリプト
 
-**参考スクリプト例**:
+**ZIPデプロイスクリプト**: `deploy.sh`
 
 ```bash
 #!/bin/bash
 
 set -euo pipefail
 
+ENVIRONMENT=${1:-dev}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/build"
 PACKAGE_NAME="lambda-package.zip"
@@ -942,7 +963,7 @@ command -v lambroll >/dev/null || { echo "Error: lambroll not found"; exit 1; }
 [[ -d "$SCRIPT_DIR/src" ]] || { echo "Error: src directory not found"; exit 1; }
 [[ -f "$SCRIPT_DIR/lambroll/function.json" ]] || { echo "Error: lambroll/function.json not found"; exit 1; }
 
-echo "Building Lambda package..."
+echo "Deploying ZIP package..."
 
 # ビルドディレクトリの作成
 mkdir -p "$BUILD_DIR"
@@ -971,19 +992,67 @@ zip -r "$BUILD_DIR/$PACKAGE_NAME" . -x "*__pycache__*" -q
 
 echo "Built: $BUILD_DIR/$PACKAGE_NAME"
 
-# lambrollでデプロイ
-echo "Deploying with lambroll..."
+# lambrollでデプロイ（バージョン公開でロールバック対応）
 cd "$SCRIPT_DIR"
-lambroll deploy --src "$BUILD_DIR/$PACKAGE_NAME"
+lambroll deploy --src "$BUILD_DIR/$PACKAGE_NAME" --publish
 
 echo "Deployment completed successfully!"
 ```
 
-**lambroll設定例**:
+##### Dockerイメージデプロイ用スクリプト
 
+**Dockerデプロイスクリプト**: `deploy.sh` (Docker用)
+
+```bash
+#!/bin/bash
+
+set -euo pipefail
+
+ENVIRONMENT=${1:-dev}
+AWS_REGION="ap-northeast-1"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 必要ツールの確認
+command -v docker >/dev/null || { echo "Error: docker not found"; exit 1; }
+command -v aws >/dev/null || { echo "Error: aws cli not found"; exit 1; }
+command -v lambroll >/dev/null || { echo "Error: lambroll not found"; exit 1; }
+[[ -f "$SCRIPT_DIR/Dockerfile" ]] || { echo "Error: Dockerfile not found"; exit 1; }
+[[ -f "$SCRIPT_DIR/lambroll/function.json" ]] || { echo "Error: lambroll/function.json not found"; exit 1; }
+
+echo "Deploying Docker image..."
+
+ECR_REPOSITORY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$(basename "$PWD")-${ENVIRONMENT}"
+GIT_SHA=$(git rev-parse --short HEAD)
+IMAGE_TAG="sha-${GIT_SHA}"
+
+echo "Image: ${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+# ECRログイン
+aws ecr get-login-password --region ${AWS_REGION} | \
+  docker login --username AWS --password-stdin ${ECR_REPOSITORY}
+
+# Docker build & push
+docker build -t app:build .
+docker tag app:build "${ECR_REPOSITORY}:${IMAGE_TAG}"
+docker push "${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+# lambroll用環境変数設定
+export FUNCTION_NAME="$(basename "$PWD")-${ENVIRONMENT}"
+export IMAGE_URI="${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+# lambrollデプロイ（バージョン公開でロールバック対応）
+cd lambroll && lambroll deploy --publish
+
+echo "Deployment completed successfully!"
+```
+
+#### lambroll設定ファイル
+
+**ZIPデプロイ用設定**: `lambroll/function.json`
 ```json
 {
-  "FunctionName": "my-function",
+  "FunctionName": "my-function-dev",
   "Runtime": "python3.13",
   "Handler": "lambda_function.lambda_handler",
   "Role": "arn:aws:iam::123456789012:role/lambda-execution-role",
@@ -996,6 +1065,66 @@ echo "Deployment completed successfully!"
   }
 }
 ```
+
+**Dockerイメージデプロイする場合**: 同じ`lambroll/function.json`をDocker用に変更
+```json
+{
+  "FunctionName": "{{ must_env `FUNCTION_NAME` }}",
+  "PackageType": "Image",
+  "Code": {
+    "ImageUri": "{{ must_env `IMAGE_URI` }}"
+  },
+  "Role": "arn:aws:iam::123456789012:role/lambda-execution-role",
+  "Timeout": 300,
+  "MemorySize": 512,
+  "Environment": {
+    "Variables": {
+      "LOG_LEVEL": "INFO"
+    }
+  }
+}
+```
+
+**Dockerfile例**: AWS Lambda公式イメージ使用
+```dockerfile
+FROM public.ecr.aws/lambda/python:3.13
+
+# 依存関係のインストール
+COPY pyproject.toml ${LAMBDA_TASK_ROOT}/
+RUN pip install --no-cache-dir uv && \
+    cd ${LAMBDA_TASK_ROOT} && \
+    uv pip install --system --no-cache .
+
+# アプリケーションコードのコピー
+COPY src/ ${LAMBDA_TASK_ROOT}/
+
+# ハンドラーの指定
+CMD ["lambda_function.lambda_handler"]
+```
+
+#### タグ戦略とロールバック
+
+**Git SHAベースタグ戦略**:
+- Dockerイメージタグ: `sha-{git_sha}`形式（例: `sha-a1b2c3d`）
+- コミットとデプロイの1対1対応で追跡性確保
+- イミュータブルなタグで一意性保証
+
+**ロールバック手順**:
+```bash
+# 前バージョンに自動ロールバック
+lambroll rollback
+
+# ドライランで確認
+lambroll rollback --dry-run
+
+# 特定バージョンにロールバック
+lambroll rollback --version=5
+```
+
+**ロールバック機能**:
+- lambrollが自動で前バージョンを検出
+- `--publish`オプションでバージョン履歴を維持
+- 障害時の迅速復旧が可能
 
 ### 運用監視
 

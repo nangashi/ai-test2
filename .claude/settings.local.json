@@ -42,7 +42,8 @@
       "Bash(sed:*)",
       "Bash(mv:*)",
       "Bash(rm:*)",
-      "Bash(unzip:*)"
+      "Bash(unzip:*)",
+      "mcp__aws-documentation__read_documentation"
     ],
     "deny": []
   },
