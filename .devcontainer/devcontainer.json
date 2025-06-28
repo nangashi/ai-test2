@@ -22,7 +22,7 @@
     // Docker有効化
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     // Claude Code有効化
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+    // "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
   },
   // VS Code拡張機能の設定
   "customizations": {

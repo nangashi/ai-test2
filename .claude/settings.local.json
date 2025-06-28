@@ -49,12 +49,18 @@
       "WebFetch(domain:docs.tavily.com)",
       "Bash(curl:*)",
       "mcp__tavily__tavily-search",
-      "mcp__tavily__tavily-extract"
+      "mcp__tavily__tavily-extract",
+      "Bash(cp:*)",
+      "Bash(touch:*)",
+      "Bash(diff:*)"
     ],
     "deny": []
   },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
-    "terraform"
+    "terraform",
+    "context7",
+    "aws-documentation",
+    "tavily"
   ]
 }

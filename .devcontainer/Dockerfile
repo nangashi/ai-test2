@@ -1,10 +1,16 @@
 # Dev Container用のベースイメージを使用
-FROM mcr.microsoft.com/devcontainers/base:ubuntu
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # 基本パッケージのアップデートとインストール
 RUN apt-get update && apt-get install -y \
-    tmux \
-    && rm -rf /var/lib/apt/lists/*
+  tmux \
+  npm \
+  && rm -rf /var/lib/apt/lists/*
+
+# Claude Codeのインストール
+RUN npm install -g @anthropic-ai/claude-code
+# gemini cliのインストール
+RUN npm install -g @google/gemini-cli
 
 # 作業ディレクトリを設定
 WORKDIR /workspace
@@ -14,6 +20,7 @@ WORKDIR /workspace
 ARG DOCKER_GID=1001
 RUN groupadd -g ${DOCKER_GID} docker && \
   usermod -aG docker vscode
+
 
 USER vscode
 
