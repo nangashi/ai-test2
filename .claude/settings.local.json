@@ -52,7 +52,8 @@
       "mcp__tavily__tavily-extract",
       "Bash(cp:*)",
       "Bash(touch:*)",
-      "Bash(diff:*)"
+      "Bash(diff:*)",
+      "Bash(export:*)"
     ],
     "deny": []
   },

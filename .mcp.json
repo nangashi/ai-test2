@@ -32,7 +32,7 @@
         "tavily-mcp@0.1.3"
       ],
       "env": {
-        "TAVILY_API_KEY": "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"
+        "TAVILY_API_KEY": ""
       }
     }
   }
